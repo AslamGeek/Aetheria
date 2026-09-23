@@ -1,12 +1,6 @@
--- ==============================================================================
+export const MIGRATION_SQL = `-- ==============================================================================
 -- Aetheria Database Migration for Supabase (PostgreSQL with pgvector)
 -- ==============================================================================
--- How to apply:
--- 1. Open your Supabase Dashboard: https://supabase.com/dashboard/project/_/sql
--- 2. Go to the "SQL Editor" tab on the left sidebar
--- 3. Click "New query", paste this entire script, and click "Run"
--- ==============================================================================
-
 -- 1. Enable pgvector for semantic memory embeddings
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -109,12 +103,6 @@ BEGIN
   DROP POLICY IF EXISTS "Allow all for object_entities" ON object_entities;
   DROP POLICY IF EXISTS "Allow all for embeddings" ON embeddings;
   DROP POLICY IF EXISTS "Allow all for insights" ON insights;
-  DROP POLICY IF EXISTS "Allow user or service access to entries" ON entries;
-  DROP POLICY IF EXISTS "Allow user or service access to objects" ON objects;
-  DROP POLICY IF EXISTS "Allow user or service access to entities" ON entities;
-  DROP POLICY IF EXISTS "Allow user or service access to object_entities" ON object_entities;
-  DROP POLICY IF EXISTS "Allow user or service access to embeddings" ON embeddings;
-  DROP POLICY IF EXISTS "Allow user or service access to insights" ON insights;
 END $$;
 
 CREATE POLICY "Allow all for entries" ON entries FOR ALL USING (true) WITH CHECK (true);
@@ -123,3 +111,4 @@ CREATE POLICY "Allow all for entities" ON entities FOR ALL USING (true) WITH CHE
 CREATE POLICY "Allow all for object_entities" ON object_entities FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for embeddings" ON embeddings FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for insights" ON insights FOR ALL USING (true) WITH CHECK (true);
+`;

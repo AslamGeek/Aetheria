@@ -17,9 +17,18 @@ import {
   Server,
   KeyRound,
   CheckCircle2,
-  Clock
+  Clock,
+  LogOut
 } from 'lucide-react';
-import { Insight } from '../types/index.ts';
+import { Insight, Entry } from '../types/index.ts';
+import { 
+  getBrowserSupabaseCredentials, 
+  testBrowserSupabase, 
+  saveBrowserSupabaseCredentials,
+  clearBrowserSupabaseCredentials,
+  syncLocalEntriesToSupabase
+} from '../lib/browserSupabase.ts';
+import { MIGRATION_SQL } from '../lib/migrationSql.ts';
 
 interface InsightsModalProps {
   isOpen: boolean;
@@ -27,6 +36,7 @@ interface InsightsModalProps {
   onRefreshEntries: () => void;
   initialTab?: 'insights' | 'database';
   onSupabaseStatusChange?: (connected: boolean) => void;
+  localEntries?: Entry[];
 }
 
 interface SupabaseStatus {
@@ -35,6 +45,7 @@ interface SupabaseStatus {
   tablesReady: boolean;
   url?: string;
   error?: string;
+  source?: 'server' | 'browser';
 }
 
 export const InsightsModal: React.FC<InsightsModalProps> = ({
@@ -43,6 +54,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   onRefreshEntries,
   initialTab = 'insights',
   onSupabaseStatusChange,
+  localEntries = [],
 }) => {
   const [activeTab, setActiveTab] = useState<'insights' | 'database'>(initialTab);
   const [insights, setInsights] = useState<Insight[]>([]);
@@ -61,10 +73,14 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
 
   // Direct manual config form
   const [showConfigForm, setShowConfigForm] = useState(false);
-  const [manualUrl, setManualUrl] = useState('');
-  const [manualKey, setManualKey] = useState('');
+  const [manualUrl, setManualUrl] = useState(() => {
+    return getBrowserSupabaseCredentials()?.url || 'https://tprpkannsiyslsdegymv.supabase.co';
+  });
+  const [manualKey, setManualKey] = useState(() => {
+    return getBrowserSupabaseCredentials()?.key || '';
+  });
   const [savingConfig, setSavingConfig] = useState(false);
-  const [configSaveMsg, setConfigSaveMsg] = useState<string | null>(null);
+  const [configSaveMsg, setConfigSaveMsg] = useState<{ text: string; success: boolean } | null>(null);
 
   const fetchInsights = async () => {
     try {
@@ -86,38 +102,61 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   const checkSupabase = async () => {
     setCheckingSupabase(true);
     try {
-      // Force non-cached network request
-      const res = await fetch(`/api/supabase/status?_t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
-      });
-      if (res.ok) {
-        const data: SupabaseStatus = await res.json();
-        setSupabaseStatus(data);
+      // 1. First attempt check via Node server API
+      let serverCheckSucceeded = false;
+      try {
+        const res = await fetch(`/api/supabase/status?_t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+        });
+
+        // Verify that response is valid JSON (and not a 404 HTML page like Vercel returns)
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data: SupabaseStatus = await res.json();
+          if (data.connected) {
+            setSupabaseStatus({ ...data, source: 'server' });
+            setLastCheckedTime(new Date().toLocaleTimeString());
+            serverCheckSucceeded = true;
+            if (onSupabaseStatusChange) onSupabaseStatusChange(true);
+            return;
+          }
+        }
+      } catch {
+        // Server route unavailable or returned HTML 404 (e.g. Vercel static deployment)
+      }
+
+      // 2. Fallback: Check directly from browser using stored or provided credentials
+      const browserCreds = getBrowserSupabaseCredentials();
+      const testUrl = browserCreds?.url || manualUrl.trim();
+      const testKey = browserCreds?.key || manualKey.trim();
+
+      if (testUrl && testKey) {
+        const clientResult = await testBrowserSupabase(testUrl, testKey);
+        setSupabaseStatus({ ...clientResult, source: 'browser' });
         setLastCheckedTime(new Date().toLocaleTimeString());
-        if (onSupabaseStatusChange) {
-          onSupabaseStatusChange(!!data.connected);
+        if (clientResult.connected && onSupabaseStatusChange) {
+          onSupabaseStatusChange(true);
         }
       } else {
-        const errText = await res.text();
         setSupabaseStatus({
           configured: false,
           connected: false,
           tablesReady: false,
-          error: `HTTP ${res.status}: ${errText}`,
+          error: 'Not connected. Enter your Supabase Project URL and Key below to link your database.',
         });
         setLastCheckedTime(new Date().toLocaleTimeString());
       }
     } catch (err: any) {
-      console.error('Error checking Supabase status:', err);
+      console.error('Error in checkSupabase:', err);
       setSupabaseStatus({
         configured: false,
         connected: false,
         tablesReady: false,
-        error: err?.message || 'Network fetch failed',
+        error: err?.message || 'Connection test failed',
       });
       setLastCheckedTime(new Date().toLocaleTimeString());
     } finally {
@@ -169,13 +208,9 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
 
   const handleCopyMigrationSql = async () => {
     try {
-      const res = await fetch(`/api/supabase/migration-sql?_t=${Date.now()}`);
-      if (res.ok) {
-        const sql = await res.text();
-        await navigator.clipboard.writeText(sql);
-        setCopiedSql(true);
-        setTimeout(() => setCopiedSql(false), 3000);
-      }
+      await navigator.clipboard.writeText(MIGRATION_SQL);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 3000);
     } catch (err) {
       console.error('Failed to copy SQL:', err);
     }
@@ -185,12 +220,26 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
     setSyncingSupabase(true);
     setSyncResult(null);
     try {
-      const res = await fetch('/api/supabase/sync', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setSyncResult(`Synced ${data.count} items successfully!`);
-      } else {
-        setSyncResult(`Sync failed: ${data.error}`);
+      // 1. Try server sync first
+      let serverSynced = false;
+      try {
+        const res = await fetch('/api/supabase/sync', { method: 'POST' });
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.success) {
+            setSyncResult(`Synced ${data.count} items successfully!`);
+            serverSynced = true;
+          }
+        }
+      } catch {
+        // Fallback to client-side sync
+      }
+
+      // 2. If server sync was not applicable, perform direct browser sync
+      if (!serverSynced) {
+        const count = await syncLocalEntriesToSupabase(localEntries);
+        setSyncResult(`Synced ${count} thought${count === 1 ? '' : 's'} directly to Supabase!`);
       }
     } catch (err: any) {
       setSyncResult(`Sync error: ${err?.message}`);
@@ -202,32 +251,62 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
 
   const handleSaveManualConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualUrl.trim() || !manualKey.trim()) return;
+    const url = manualUrl.trim();
+    const key = manualKey.trim();
+
+    if (!url || !key) return;
+
     setSavingConfig(true);
     setConfigSaveMsg(null);
+
     try {
-      const res = await fetch('/api/supabase/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: manualUrl.trim(), key: manualKey.trim() }),
-      });
-      const data = await res.json();
-      if (data.success && data.status?.connected) {
-        setSupabaseStatus(data.status);
+      // 1. Direct browser verification using @supabase/supabase-js
+      const result = await testBrowserSupabase(url, key);
+
+      if (result.connected) {
+        saveBrowserSupabaseCredentials(url, key);
+        setSupabaseStatus({ ...result, source: 'browser' });
         setLastCheckedTime(new Date().toLocaleTimeString());
-        setConfigSaveMsg('Credentials verified and saved successfully!');
+        setConfigSaveMsg({ text: 'Connected to Supabase successfully!', success: true });
+        
         if (onSupabaseStatusChange) {
           onSupabaseStatusChange(true);
         }
-        setShowConfigForm(false);
+
+        // 2. Progressive background notification to backend (silently ignore if static/404)
+        fetch('/api/supabase/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, key }),
+        }).catch(() => {});
+
+        setTimeout(() => {
+          setShowConfigForm(false);
+          setConfigSaveMsg(null);
+        }, 2000);
       } else {
-        setConfigSaveMsg(data.status?.error || 'Failed to connect with provided keys.');
+        setConfigSaveMsg({ 
+          text: result.error || 'Could not connect. Please verify your Project URL and API Key.', 
+          success: false 
+        });
       }
     } catch (err: any) {
-      setConfigSaveMsg(err?.message || 'Error saving credentials.');
+      setConfigSaveMsg({ text: err?.message || 'Error testing Supabase connection.', success: false });
     } finally {
       setSavingConfig(false);
     }
+  };
+
+  const handleDisconnect = () => {
+    clearBrowserSupabaseCredentials();
+    setSupabaseStatus({
+      configured: false,
+      connected: false,
+      tablesReady: false,
+      error: 'Disconnected from Supabase.',
+    });
+    if (onSupabaseStatusChange) onSupabaseStatusChange(false);
+    setConfigSaveMsg(null);
   };
 
   const handleSeedExamples = async () => {
@@ -261,7 +340,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -292,7 +371,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
             <Server className="w-3.5 h-3.5" />
             <span>Supabase Connection</span>
             {supabaseStatus?.connected ? (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-xs shadow-emerald-400" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-xs shadow-emerald-400 animate-pulse" />
             ) : (
               <span className="w-2 h-2 rounded-full bg-slate-600" />
             )}
@@ -453,7 +532,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                           Connected to Supabase PostgreSQL
                         </p>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-900/80 text-emerald-300 border border-emerald-500/40">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 animate-pulse">
                           LIVE
                         </span>
                       </div>
@@ -476,10 +555,10 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                     <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                     <div className="text-xs space-y-1 flex-1">
                       <p className="font-semibold text-slate-200">
-                        {supabaseStatus?.configured ? 'Connection Issue' : 'Not Connected (Using Local Persistence)'}
+                        {supabaseStatus?.configured ? 'Connection Issue' : 'Not Connected to Supabase'}
                       </p>
-                      <p className="text-slate-400">
-                        {supabaseStatus?.error || 'Aetheria is currently storing thoughts locally in data/aetheria_db.json. Click "Refresh Status" or configure your credentials below.'}
+                      <p className="text-slate-400 leading-relaxed">
+                        {supabaseStatus?.error || 'Enter your Supabase URL & Key below to link your PostgreSQL database.'}
                       </p>
                     </div>
                   </div>
@@ -499,63 +578,79 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                     {syncResult && (
                       <span className="text-xs text-emerald-300 font-medium">{syncResult}</span>
                     )}
+                    <button
+                      onClick={handleDisconnect}
+                      className="text-slate-500 hover:text-rose-400 text-xs flex items-center gap-1 ml-auto cursor-pointer"
+                      title="Clear stored Supabase credentials"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Disconnect</span>
+                    </button>
                   </div>
                 )}
               </div>
 
-              {/* Direct In-App Credentials Form Toggle */}
+              {/* Direct In-App Credentials Form */}
               <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-800/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
                     <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Quick Configuration</span>
+                    <span>Supabase Credentials Configuration</span>
                   </div>
                   <button
                     onClick={() => setShowConfigForm(!showConfigForm)}
                     className="text-[11px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
                   >
-                    {showConfigForm ? 'Hide form' : 'Enter / Update Keys in UI'}
+                    {showConfigForm ? 'Hide form' : 'Enter / Update Keys'}
                   </button>
                 </div>
 
-                {showConfigForm && (
-                  <form onSubmit={handleSaveManualConfig} className="space-y-2.5 pt-1">
+                {(!supabaseStatus?.connected || showConfigForm) && (
+                  <form onSubmit={handleSaveManualConfig} className="space-y-3 pt-1">
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">
+                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
                         Supabase Project URL:
                       </label>
                       <input
-                        type="text"
-                        placeholder="https://xyz.supabase.co"
+                        type="url"
+                        placeholder="https://tprpkannsiyslsdegymv.supabase.co"
                         value={manualUrl}
                         onChange={(e) => setManualUrl(e.target.value)}
-                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">
-                        Supabase Service Role Key (or Anon Key):
+                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
+                        Supabase Anon Key or Service Role Key:
                       </label>
                       <input
                         type="password"
                         placeholder="eyJhbGciOi..."
                         value={manualKey}
                         onChange={(e) => setManualKey(e.target.value)}
-                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
                         required
                       />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Found in your Supabase Dashboard ➔ Project Settings ➔ API ➔ "anon" or "service_role" key.
+                      </p>
                     </div>
-                    <div className="flex items-center justify-between pt-1">
+
+                    <div className="flex items-center justify-between pt-1 gap-2">
                       <button
                         type="submit"
                         disabled={savingConfig}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium cursor-pointer"
+                        className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-colors shrink-0"
                       >
-                        {savingConfig ? 'Saving & Testing...' : 'Save & Test Connection'}
+                        <RotateCw className={`w-3.5 h-3.5 ${savingConfig ? 'animate-spin' : ''}`} />
+                        <span>{savingConfig ? 'Connecting & Verifying...' : 'Save & Connect to Supabase'}</span>
                       </button>
+
                       {configSaveMsg && (
-                        <span className="text-xs text-indigo-300 font-medium">{configSaveMsg}</span>
+                        <span className={`text-xs font-medium ${configSaveMsg.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {configSaveMsg.text}
+                        </span>
                       )}
                     </div>
                   </form>
@@ -572,7 +667,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                   {/* Step 1 */}
                   <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/80 space-y-1">
                     <div className="flex items-center justify-between font-semibold text-slate-200">
-                      <span>1. Create a Supabase Project</span>
+                      <span>1. Your Supabase Project</span>
                       <a
                         href="https://supabase.com/dashboard"
                         target="_blank"
@@ -584,7 +679,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                       </a>
                     </div>
                     <p className="text-slate-400">
-                      Go to Supabase and create a new project (free tier includes PostgreSQL & pgvector).
+                      Your project URL: <code className="text-indigo-300 font-mono text-[11px]">https://tprpkannsiyslsdegymv.supabase.co</code>
                     </p>
                   </div>
 
@@ -598,12 +693,12 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                       >
                         {copiedSql ? (
                           <>
-                            <Check className="w-3 h-3 text-emerald-400" />
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
                             <span>Copied SQL!</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="w-3 h-3" />
+                            <Copy className="w-3.5 h-3.5" />
                             <span>Copy Migration SQL</span>
                           </>
                         )}
@@ -617,15 +712,11 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                   {/* Step 3 */}
                   <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/80 space-y-2">
                     <div className="font-semibold text-slate-200">
-                      <span>3. Environment Variables in AI Studio Secrets</span>
+                      <span>3. Find Your API Key</span>
                     </div>
                     <p className="text-slate-400">
-                      Found in Supabase ➔ Project Settings ➔ API:
+                      In Supabase ➔ Project Settings ➔ API, copy the <strong>anon public</strong> key (or service_role key), paste it into the form above, and click <strong>"Save & Connect to Supabase"</strong>.
                     </p>
-                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
-                      <div><strong className="text-indigo-300">SUPABASE_URL</strong> = https://xyz.supabase.co</div>
-                      <div><strong className="text-indigo-300">SUPABASE_SERVICE_ROLE_KEY</strong> = eyJhbGci...</div>
-                    </div>
                   </div>
                 </div>
               </div>
