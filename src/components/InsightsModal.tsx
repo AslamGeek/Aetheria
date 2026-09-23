@@ -16,7 +16,8 @@ import {
   AlertCircle,
   Server,
   KeyRound,
-  CheckCircle2
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 import { Insight } from '../types/index.ts';
 
@@ -24,6 +25,8 @@ interface InsightsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRefreshEntries: () => void;
+  initialTab?: 'insights' | 'database';
+  onSupabaseStatusChange?: (connected: boolean) => void;
 }
 
 interface SupabaseStatus {
@@ -38,8 +41,10 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   isOpen,
   onClose,
   onRefreshEntries,
+  initialTab = 'insights',
+  onSupabaseStatusChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'insights' | 'database'>('insights');
+  const [activeTab, setActiveTab] = useState<'insights' | 'database'>(initialTab);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -49,6 +54,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   // Supabase status & actions
   const [supabaseStatus, setSupabaseStatus] = useState<SupabaseStatus | null>(null);
   const [checkingSupabase, setCheckingSupabase] = useState(false);
+  const [lastCheckedTime, setLastCheckedTime] = useState<string | null>(null);
   const [syncingSupabase, setSyncingSupabase] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
@@ -63,7 +69,9 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   const fetchInsights = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/insights');
+      const res = await fetch(`/api/insights?_t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       if (res.ok) {
         const data = await res.json();
         setInsights(data.insights || []);
@@ -78,13 +86,40 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   const checkSupabase = async () => {
     setCheckingSupabase(true);
     try {
-      const res = await fetch('/api/supabase/status');
+      // Force non-cached network request
+      const res = await fetch(`/api/supabase/status?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
       if (res.ok) {
-        const data = await res.json();
+        const data: SupabaseStatus = await res.json();
         setSupabaseStatus(data);
+        setLastCheckedTime(new Date().toLocaleTimeString());
+        if (onSupabaseStatusChange) {
+          onSupabaseStatusChange(!!data.connected);
+        }
+      } else {
+        const errText = await res.text();
+        setSupabaseStatus({
+          configured: false,
+          connected: false,
+          tablesReady: false,
+          error: `HTTP ${res.status}: ${errText}`,
+        });
+        setLastCheckedTime(new Date().toLocaleTimeString());
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error checking Supabase status:', err);
+      setSupabaseStatus({
+        configured: false,
+        connected: false,
+        tablesReady: false,
+        error: err?.message || 'Network fetch failed',
+      });
+      setLastCheckedTime(new Date().toLocaleTimeString());
     } finally {
       setCheckingSupabase(false);
     }
@@ -92,16 +127,17 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setActiveTab(initialTab);
       fetchInsights();
       checkSupabase();
     }
-  }, [isOpen]);
+  }, [isOpen, initialTab]);
 
   useEffect(() => {
     if (isOpen && activeTab === 'database') {
       checkSupabase();
     }
-  }, [isOpen, activeTab]);
+  }, [activeTab]);
 
   const handleGenerate = async () => {
     try {
@@ -133,7 +169,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
 
   const handleCopyMigrationSql = async () => {
     try {
-      const res = await fetch('/api/supabase/migration-sql');
+      const res = await fetch(`/api/supabase/migration-sql?_t=${Date.now()}`);
       if (res.ok) {
         const sql = await res.text();
         await navigator.clipboard.writeText(sql);
@@ -178,7 +214,11 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
       const data = await res.json();
       if (data.success && data.status?.connected) {
         setSupabaseStatus(data.status);
-        setConfigSaveMsg('Credentials saved and connected!');
+        setLastCheckedTime(new Date().toLocaleTimeString());
+        setConfigSaveMsg('Credentials verified and saved successfully!');
+        if (onSupabaseStatusChange) {
+          onSupabaseStatusChange(true);
+        }
         setShowConfigForm(false);
       } else {
         setConfigSaveMsg(data.status?.error || 'Failed to connect with provided keys.');
@@ -252,7 +292,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
             <Server className="w-3.5 h-3.5" />
             <span>Supabase Connection</span>
             {supabaseStatus?.connected ? (
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-xs shadow-emerald-400" />
             ) : (
               <span className="w-2 h-2 rounded-full bg-slate-600" />
             )}
@@ -383,9 +423,17 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
               {/* Connection Status Card */}
               <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Connection Status
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Connection Status
+                    </span>
+                    {lastCheckedTime && (
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>Checked at {lastCheckedTime}</span>
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={checkSupabase}
                     disabled={checkingSupabase}
@@ -405,12 +453,12 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                           Connected to Supabase PostgreSQL
                         </p>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-900/60 text-emerald-300 border border-emerald-500/30">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-900/80 text-emerald-300 border border-emerald-500/40">
                           LIVE
                         </span>
                       </div>
                       <p className="text-slate-400 font-mono text-[11px]">
-                        URL: <span className="text-slate-200">{supabaseStatus.url}</span>
+                        URL: <span className="text-slate-200 font-semibold">{supabaseStatus.url}</span>
                       </p>
                       {supabaseStatus.tablesReady ? (
                         <p className="text-emerald-300 font-medium">
@@ -426,7 +474,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                 ) : (
                   <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
                     <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                    <div className="text-xs space-y-1">
+                    <div className="text-xs space-y-1 flex-1">
                       <p className="font-semibold text-slate-200">
                         {supabaseStatus?.configured ? 'Connection Issue' : 'Not Connected (Using Local Persistence)'}
                       </p>

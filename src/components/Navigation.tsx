@@ -8,7 +8,8 @@ import {
   Sparkles, 
   Layers,
   CheckCircle2,
-  Bookmark
+  Bookmark,
+  Database
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 
@@ -18,6 +19,8 @@ interface NavigationProps {
   pendingTasksCount: number;
   totalEntriesCount: number;
   onOpenInsights: () => void;
+  isSupabaseConnected?: boolean;
+  onOpenSupabase?: () => void;
 }
 
 interface NavTab {
@@ -33,6 +36,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   pendingTasksCount,
   totalEntriesCount,
   onOpenInsights,
+  isSupabaseConnected = false,
+  onOpenSupabase,
 }) => {
   const tabs: NavTab[] = [
     {
@@ -111,6 +116,29 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Right Actions */}
         <div className="flex items-center gap-2">
+          {/* Supabase status indicator button */}
+          <button
+            onClick={onOpenSupabase || onOpenInsights}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+              isSupabaseConnected
+                ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300 hover:bg-emerald-950/50'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+            title={isSupabaseConnected ? 'Connected to Supabase PostgreSQL' : 'Supabase Not Connected (Local Storage)'}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span className="hidden md:inline text-[11px]">
+              {isSupabaseConnected ? 'Supabase' : 'Database'}
+            </span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isSupabaseConnected
+                  ? 'bg-emerald-400 shadow-xs shadow-emerald-400 animate-pulse'
+                  : 'bg-slate-600'
+              }`}
+            />
+          </button>
+
           <button
             onClick={onOpenInsights}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs font-medium transition-colors cursor-pointer"

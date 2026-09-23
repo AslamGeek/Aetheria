@@ -13,12 +13,35 @@ export default function App() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [latestCapturedEntry, setLatestCapturedEntry] = useState<Entry | null>(null);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
+  const [insightsModalTab, setInsightsModalTab] = useState<'insights' | 'database'>('insights');
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Check Supabase connection on load
+  const checkSupabaseStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/supabase/status?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsSupabaseConnected(!!data.connected);
+      }
+    } catch (err) {
+      console.error('Failed to check Supabase status:', err);
+    }
+  }, []);
 
   // Fetch entries from server
   const fetchEntries = useCallback(async () => {
     try {
-      const res = await fetch('/api/entries');
+      const res = await fetch(`/api/entries?_t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       if (res.ok) {
         const data = await res.json();
         setEntries(data.entries || []);
@@ -32,7 +55,8 @@ export default function App() {
 
   useEffect(() => {
     fetchEntries();
-  }, [fetchEntries]);
+    checkSupabaseStatus();
+  }, [fetchEntries, checkSupabaseStatus]);
 
   // Capture thought
   const handleCapture = async (rawText: string): Promise<{ entry: Entry; summary?: string } | null> => {
@@ -61,7 +85,7 @@ export default function App() {
     }
   };
 
-  // Reprocess existing entry
+  // Reprocess entry
   const handleReprocess = async (entryId: string) => {
     try {
       const res = await fetch(`/api/entries/${entryId}/reprocess`, {
@@ -75,97 +99,125 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error('Reprocess error:', err);
+      console.error('Error reprocessing entry:', err);
     }
   };
 
   // Delete entry
   const handleDeleteEntry = async (entryId: string) => {
     try {
-      await fetch(`/api/entries/${entryId}`, { method: 'DELETE' });
-      setEntries(prev => prev.filter(e => e.id !== entryId));
-      if (latestCapturedEntry?.id === entryId) {
-        setLatestCapturedEntry(null);
+      const res = await fetch(`/api/entries/${entryId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setEntries(prev => prev.filter(e => e.id !== entryId));
+        if (latestCapturedEntry?.id === entryId) {
+          setLatestCapturedEntry(null);
+        }
       }
     } catch (err) {
-      console.error('Delete entry error:', err);
+      console.error('Error deleting entry:', err);
     }
   };
 
-  // Update extracted object
-  const handleUpdateObject = async (id: string, updates: Partial<ExtractedObject>) => {
-    // Optimistic local update
-    setEntries(prev =>
-      prev.map(entry => {
-        if (!entry.objects) return entry;
-        const updatedObjs = entry.objects.map(obj =>
-          obj.id === id ? { ...obj, ...updates } : obj
-        );
-        return { ...entry, objects: updatedObjs };
-      })
-    );
-
+  // Update object
+  const handleUpdateObject = async (objectId: string, updates: Partial<ExtractedObject>) => {
     try {
-      await fetch(`/api/objects/${id}`, {
+      const res = await fetch(`/api/objects/${objectId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
+
+      if (res.ok) {
+        const data = await res.json();
+        const updated = data.object;
+        // Update in state
+        setEntries(prev =>
+          prev.map(entry => ({
+            ...entry,
+            objects: (entry.objects || []).map(obj =>
+              obj.id === objectId ? { ...obj, ...updated } : obj
+            ),
+          }))
+        );
+
+        if (latestCapturedEntry) {
+          setLatestCapturedEntry({
+            ...latestCapturedEntry,
+            objects: (latestCapturedEntry.objects || []).map(obj =>
+              obj.id === objectId ? { ...obj, ...updated } : obj
+            ),
+          });
+        }
+      }
     } catch (err) {
-      console.error('Update object error:', err);
-      fetchEntries(); // Revert on failure
+      console.error('Error updating object:', err);
     }
   };
 
-  // Delete extracted object
-  const handleDeleteObject = async (id: string) => {
-    // Optimistic local update
-    setEntries(prev =>
-      prev.map(entry => {
-        if (!entry.objects) return entry;
-        return {
-          ...entry,
-          objects: entry.objects.filter(obj => obj.id !== id),
-        };
-      })
-    );
-
+  // Delete object
+  const handleDeleteObject = async (objectId: string) => {
     try {
-      await fetch(`/api/objects/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/objects/${objectId}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        setEntries(prev =>
+          prev.map(entry => ({
+            ...entry,
+            objects: (entry.objects || []).filter(obj => obj.id !== objectId),
+          }))
+        );
+
+        if (latestCapturedEntry) {
+          setLatestCapturedEntry({
+            ...latestCapturedEntry,
+            objects: (latestCapturedEntry.objects || []).filter(obj => obj.id !== objectId),
+          });
+        }
+      }
     } catch (err) {
-      console.error('Delete object error:', err);
-      fetchEntries();
+      console.error('Error deleting object:', err);
     }
   };
 
-  // Compute pending tasks count across all entries
-  const pendingTasksCount = entries.reduce((count, entry) => {
-    const activeTasks = (entry.objects || []).filter(
-      o => o.type === 'task' && o.status !== 'completed' && o.status !== 'dismissed'
+  // Count pending tasks
+  const pendingTasksCount = entries.reduce((acc, entry) => {
+    const tasks = (entry.objects || []).filter(
+      o => o.type === 'task' && o.status === 'pending'
     );
-    return count + activeTasks.length;
+    return acc + tasks.length;
   }, 0);
 
+  const openInsights = (tab: 'insights' | 'database' = 'insights') => {
+    setInsightsModalTab(tab);
+    setIsInsightsOpen(true);
+  };
+
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col font-sans pb-20 sm:pb-10 selection:bg-indigo-500/30 selection:text-white">
-      {/* Top Navigation */}
+    <div className="min-h-screen bg-[#090d16] text-[#e2e8f0] flex flex-col font-sans pb-16 sm:pb-0">
+      {/* Top Header & Navigation */}
       <Navigation
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         pendingTasksCount={pendingTasksCount}
         totalEntriesCount={entries.length}
-        onOpenInsights={() => setIsInsightsOpen(true)}
+        onOpenInsights={() => openInsights('insights')}
+        isSupabaseConnected={isSupabaseConnected}
+        onOpenSupabase={() => openInsights('database')}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 pt-6 sm:pt-8">
+      {/* Main Surface */}
+      <main className="flex-1 w-full max-w-3xl mx-auto px-4 py-6 sm:py-10">
         {currentTab === 'capture' && (
           <CaptureView
             onCapture={handleCapture}
+            latestCapturedEntry={latestCapturedEntry}
             onUpdateObject={handleUpdateObject}
             onDeleteObject={handleDeleteObject}
             onSelectTab={setCurrentTab}
-            latestCapturedEntry={latestCapturedEntry}
           />
         )}
 
@@ -189,18 +241,20 @@ export default function App() {
 
         {currentTab === 'memory' && (
           <MemoryView
-            onInspectEntry={(entryId) => {
+            onInspectEntry={(_entryId) => {
               setCurrentTab('inbox');
             }}
           />
         )}
       </main>
 
-      {/* Insights / Meta-patterns & Export Modal */}
+      {/* Insights / Meta-patterns & Supabase Database Modal */}
       <InsightsModal
         isOpen={isInsightsOpen}
         onClose={() => setIsInsightsOpen(false)}
         onRefreshEntries={fetchEntries}
+        initialTab={insightsModalTab}
+        onSupabaseStatusChange={(connected) => setIsSupabaseConnected(connected)}
       />
 
       {/* Offline Status Toast */}

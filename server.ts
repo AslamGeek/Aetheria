@@ -20,6 +20,15 @@ const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 app.use(express.json());
 
+// Prevent any caching of API responses by browsers or service workers
+app.use('/api', (_req: Request, res: Response, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
 // Helper to get active user ID (supports multi-user headers or default personal user)
 function getUserId(req: Request): string {
   const custom = req.headers['x-user-id'];
