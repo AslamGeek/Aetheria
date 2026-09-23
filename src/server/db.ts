@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { Entry, ExtractedObject, Entity, Insight } from '../types/index.ts';
 import { cosineSimilarity } from '../../lib/ai/generateEmbedding.ts';
+import { getSupabaseClient } from './supabase.ts';
 
 export interface StoredEmbedding {
   id: string;
@@ -47,7 +49,7 @@ function loadState(): DatabaseState {
     console.error('Error reading database file, initializing empty state:', err);
   }
 
-  // Seed sample initial data demonstrating the product principles if empty
+  // Seed sample initial data with valid UUIDs
   const defaultUserId = '00000000-0000-0000-0000-000000000001';
   const now = new Date();
   const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
@@ -55,7 +57,7 @@ function loadState(): DatabaseState {
 
   const initialEntries: Entry[] = [
     {
-      id: 'e101',
+      id: '11111111-1111-1111-1111-111111111101',
       user_id: defaultUserId,
       raw_text: "Need to call Ramesh tomorrow about the land documents. Also maybe we should validate whether anyone wants reporting before building the dashboard. Check competitor pricing sometime this week.",
       cleaned_text: "Need to call Ramesh tomorrow about the land documents. Also maybe validate whether anyone wants reporting before building the dashboard. Check competitor pricing sometime this week.",
@@ -69,7 +71,7 @@ function loadState(): DatabaseState {
       processed_at: yesterday.toISOString(),
     },
     {
-      id: 'e102',
+      id: '11111111-1111-1111-1111-111111111102',
       user_id: defaultUserId,
       raw_text: "We decided to delay the launch until February.",
       cleaned_text: "We decided to delay the launch until February.",
@@ -86,7 +88,7 @@ function loadState(): DatabaseState {
 
   const initialEntities: Entity[] = [
     {
-      id: 'ent1',
+      id: '22222222-2222-2222-2222-222222222201',
       user_id: defaultUserId,
       type: 'person',
       canonical_name: 'Ramesh',
@@ -94,7 +96,7 @@ function loadState(): DatabaseState {
       created_at: yesterday.toISOString(),
     },
     {
-      id: 'ent2',
+      id: '22222222-2222-2222-2222-222222222202',
       user_id: defaultUserId,
       type: 'project',
       canonical_name: 'Dashboard Reporting',
@@ -102,7 +104,7 @@ function loadState(): DatabaseState {
       created_at: yesterday.toISOString(),
     },
     {
-      id: 'ent3',
+      id: '22222222-2222-2222-2222-222222222203',
       user_id: defaultUserId,
       type: 'topic',
       canonical_name: 'Competitor Pricing',
@@ -110,7 +112,7 @@ function loadState(): DatabaseState {
       created_at: yesterday.toISOString(),
     },
     {
-      id: 'ent4',
+      id: '22222222-2222-2222-2222-222222222204',
       user_id: defaultUserId,
       type: 'project',
       canonical_name: 'Launch',
@@ -121,8 +123,8 @@ function loadState(): DatabaseState {
 
   const initialObjects: ExtractedObject[] = [
     {
-      id: 'obj1',
-      entry_id: 'e101',
+      id: '33333333-3333-3333-3333-333333333301',
+      entry_id: '11111111-1111-1111-1111-111111111101',
       user_id: defaultUserId,
       type: 'task',
       title: 'Call Ramesh about the land documents',
@@ -137,8 +139,8 @@ function loadState(): DatabaseState {
       updated_at: yesterday.toISOString(),
     },
     {
-      id: 'obj2',
-      entry_id: 'e101',
+      id: '33333333-3333-3333-3333-333333333302',
+      entry_id: '11111111-1111-1111-1111-111111111101',
       user_id: defaultUserId,
       type: 'idea',
       title: 'Validate demand for reporting before building the dashboard',
@@ -153,8 +155,8 @@ function loadState(): DatabaseState {
       updated_at: yesterday.toISOString(),
     },
     {
-      id: 'obj3',
-      entry_id: 'e101',
+      id: '33333333-3333-3333-3333-333333333303',
+      entry_id: '11111111-1111-1111-1111-111111111101',
       user_id: defaultUserId,
       type: 'task',
       title: 'Check competitor pricing',
@@ -169,8 +171,8 @@ function loadState(): DatabaseState {
       updated_at: yesterday.toISOString(),
     },
     {
-      id: 'obj4',
-      entry_id: 'e102',
+      id: '33333333-3333-3333-3333-333333333304',
+      entry_id: '11111111-1111-1111-1111-111111111102',
       user_id: defaultUserId,
       type: 'decision',
       title: 'Delay product launch until February',
@@ -187,10 +189,10 @@ function loadState(): DatabaseState {
   ];
 
   const initialObjectEntities: ObjectEntityRelation[] = [
-    { object_id: 'obj1', entity_id: 'ent1', relationship: 'contact' },
-    { object_id: 'obj2', entity_id: 'ent2', relationship: 'focus' },
-    { object_id: 'obj3', entity_id: 'ent3', relationship: 'subject' },
-    { object_id: 'obj4', entity_id: 'ent4', relationship: 'milestone' }
+    { object_id: '33333333-3333-3333-3333-333333333301', entity_id: '22222222-2222-2222-2222-222222222201', relationship: 'contact' },
+    { object_id: '33333333-3333-3333-3333-333333333302', entity_id: '22222222-2222-2222-2222-222222222202', relationship: 'focus' },
+    { object_id: '33333333-3333-3333-3333-333333333303', entity_id: '22222222-2222-2222-2222-222222222203', relationship: 'subject' },
+    { object_id: '33333333-3333-3333-3333-333333333304', entity_id: '22222222-2222-2222-2222-222222222204', relationship: 'milestone' }
   ];
 
   const state: DatabaseState = {
@@ -201,11 +203,11 @@ function loadState(): DatabaseState {
     embeddings: [],
     insights: [
       {
-        id: 'ins1',
+        id: '44444444-4444-4444-4444-444444444401',
         user_id: defaultUserId,
         title: 'Prudent feature prioritization',
         observation: 'You consistently favor user demand validation before committing dev bandwidth to large surfaces like the dashboard.',
-        evidence_entry_ids: ['e101'],
+        evidence_entry_ids: ['11111111-1111-1111-1111-111111111101'],
         category: 'pattern',
         created_at: yesterday.toISOString(),
       }
@@ -227,6 +229,17 @@ function saveState(state: DatabaseState): void {
 // In-memory cache
 let db: DatabaseState = loadState();
 
+// Asynchronous background helper to sync mutations to Supabase if configured
+async function syncToSupabaseAsync(action: (client: any) => Promise<any>) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    await action(client);
+  } catch (err) {
+    console.warn('Background Supabase sync error (non-fatal):', err);
+  }
+}
+
 export const Database = {
   // Entries
   getEntries(userId: string): Entry[] {
@@ -241,6 +254,25 @@ export const Database = {
   createEntry(entry: Entry): Entry {
     db.entries.unshift(entry);
     saveState(db);
+
+    // Sync to Supabase
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('entries').upsert({
+        id: entry.id,
+        user_id: entry.user_id,
+        raw_text: entry.raw_text,
+        cleaned_text: entry.cleaned_text || null,
+        source: entry.source || 'manual',
+        status: entry.status,
+        parser_version: entry.parser_version,
+        schema_version: entry.schema_version,
+        model_name: entry.model_name,
+        processing_error: entry.processing_error || null,
+        created_at: entry.created_at,
+        processed_at: entry.processed_at || null,
+      });
+    });
+
     return entry;
   },
 
@@ -249,7 +281,19 @@ export const Database = {
     if (idx === -1) return null;
     db.entries[idx] = { ...db.entries[idx], ...updates };
     saveState(db);
-    return db.entries[idx];
+
+    const updated = db.entries[idx];
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('entries').update({
+        raw_text: updated.raw_text,
+        cleaned_text: updated.cleaned_text || null,
+        status: updated.status,
+        processing_error: updated.processing_error || null,
+        processed_at: updated.processed_at || null,
+      }).eq('id', id);
+    });
+
+    return updated;
   },
 
   deleteEntry(id: string): boolean {
@@ -261,6 +305,11 @@ export const Database = {
     db.object_entities = db.object_entities.filter(oe => !removedObjectIds.includes(oe.object_id));
     db.embeddings = db.embeddings.filter(emb => !(emb.source_id === id || removedObjectIds.includes(emb.source_id)));
     saveState(db);
+
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('entries').delete().eq('id', id);
+    });
+
     return db.entries.length < initialLen;
   },
 
@@ -293,6 +342,28 @@ export const Database = {
       }
     }
     saveState(db);
+
+    syncToSupabaseAsync(async (sb) => {
+      if (!objects.length) return;
+      const records = objects.map(o => ({
+        id: o.id,
+        entry_id: o.entry_id,
+        user_id: o.user_id,
+        type: o.type,
+        title: o.title,
+        description: o.description || null,
+        status: o.status,
+        confidence: o.confidence,
+        due_at: o.due_at || null,
+        date_precision: o.date_precision || null,
+        original_date_phrase: o.original_date_phrase || null,
+        metadata: o.metadata || {},
+        created_at: o.created_at,
+        updated_at: o.updated_at,
+      }));
+      await sb.from('objects').upsert(records);
+    });
+
     return objects;
   },
 
@@ -305,7 +376,22 @@ export const Database = {
       updated_at: new Date().toISOString(),
     };
     saveState(db);
-    return db.objects[idx];
+
+    const updated = db.objects[idx];
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('objects').update({
+        title: updated.title,
+        description: updated.description || null,
+        type: updated.type,
+        status: updated.status,
+        due_at: updated.due_at || null,
+        date_precision: updated.date_precision || null,
+        original_date_phrase: updated.original_date_phrase || null,
+        updated_at: updated.updated_at,
+      }).eq('id', id);
+    });
+
+    return updated;
   },
 
   deleteObject(id: string): boolean {
@@ -314,6 +400,11 @@ export const Database = {
     db.object_entities = db.object_entities.filter(oe => oe.object_id !== id);
     db.embeddings = db.embeddings.filter(emb => emb.source_id !== id);
     saveState(db);
+
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('objects').delete().eq('id', id);
+    });
+
     return db.objects.length < initialLen;
   },
 
@@ -330,7 +421,7 @@ export const Database = {
     if (existing) return existing;
 
     const newEnt: Entity = {
-      id: 'ent_' + Math.random().toString(36).substring(2, 11),
+      id: crypto.randomUUID(),
       user_id: userId,
       type,
       canonical_name: normalized,
@@ -339,6 +430,18 @@ export const Database = {
     };
     db.entities.push(newEnt);
     saveState(db);
+
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('entities').upsert({
+        id: newEnt.id,
+        user_id: newEnt.user_id,
+        type: newEnt.type,
+        canonical_name: newEnt.canonical_name,
+        metadata: newEnt.metadata || {},
+        created_at: newEnt.created_at,
+      });
+    });
+
     return newEnt;
   },
 
@@ -347,6 +450,14 @@ export const Database = {
     if (!exists) {
       db.object_entities.push({ object_id: objectId, entity_id: entityId, relationship });
       saveState(db);
+
+      syncToSupabaseAsync(async (sb) => {
+        await sb.from('object_entities').upsert({
+          object_id: objectId,
+          entity_id: entityId,
+          relationship: relationship || null,
+        });
+      });
     }
   },
 
@@ -369,6 +480,19 @@ export const Database = {
       db.embeddings.push(embedding);
     }
     saveState(db);
+
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('embeddings').upsert({
+        id: embedding.id,
+        user_id: embedding.user_id,
+        source_type: embedding.source_type,
+        source_id: embedding.source_id,
+        content: embedding.content,
+        embedding: embedding.embedding,
+        embedding_model: embedding.embedding_model,
+        created_at: embedding.created_at,
+      });
+    });
   },
 
   semanticSearch(userId: string, queryEmbedding: number[], topK = 6): { sourceId: string; sourceType: 'entry' | 'object'; score: number; content: string }[] {
@@ -398,6 +522,19 @@ export const Database = {
   saveInsight(insight: Insight): Insight {
     db.insights.unshift(insight);
     saveState(db);
+
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('insights').upsert({
+        id: insight.id,
+        user_id: insight.user_id,
+        title: insight.title,
+        observation: insight.observation,
+        evidence_entry_ids: insight.evidence_entry_ids,
+        category: insight.category,
+        created_at: insight.created_at,
+      });
+    });
+
     return insight;
   },
 
@@ -405,7 +542,53 @@ export const Database = {
     const len = db.insights.length;
     db.insights = db.insights.filter(i => i.id !== id);
     saveState(db);
+
+    syncToSupabaseAsync(async (sb) => {
+      await sb.from('insights').delete().eq('id', id);
+    });
+
     return db.insights.length < len;
+  },
+
+  // Push all existing local state to Supabase
+  async pushAllToSupabase(userId: string): Promise<{ success: boolean; count: number; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) {
+      return { success: false, count: 0, error: 'Supabase client is not configured' };
+    }
+
+    try {
+      const userEntries = db.entries.filter(e => e.user_id === userId);
+      const userObjects = db.objects.filter(o => o.user_id === userId);
+      const userEntities = db.entities.filter(e => e.user_id === userId);
+      const objectIds = new Set(userObjects.map(o => o.id));
+      const userRelations = db.object_entities.filter(oe => objectIds.has(oe.object_id));
+      const userInsights = db.insights.filter(i => i.user_id === userId);
+
+      if (userEntries.length > 0) {
+        await client.from('entries').upsert(userEntries);
+      }
+      if (userEntities.length > 0) {
+        await client.from('entities').upsert(userEntities);
+      }
+      if (userObjects.length > 0) {
+        await client.from('objects').upsert(userObjects);
+      }
+      if (userRelations.length > 0) {
+        await client.from('object_entities').upsert(userRelations);
+      }
+      if (userInsights.length > 0) {
+        await client.from('insights').upsert(userInsights);
+      }
+
+      return {
+        success: true,
+        count: userEntries.length + userObjects.length + userEntities.length,
+      };
+    } catch (err: any) {
+      console.error('Error syncing to Supabase:', err);
+      return { success: false, count: 0, error: err?.message || 'Failed to sync to Supabase' };
+    }
   },
 
   // Full export

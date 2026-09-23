@@ -3,12 +3,15 @@ dotenv.config();
 
 import express, { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { Database } from './src/server/db.ts';
 import { parseThought } from './lib/ai/parseThought.ts';
 import { generateEmbedding } from './lib/ai/generateEmbedding.ts';
 import { answerFromMemory } from './lib/ai/answerFromMemory.ts';
 import { generateInsights } from './lib/ai/generateInsights.ts';
+import { checkSupabaseConnection } from './src/server/supabase.ts';
 import { Entry, ExtractedObject } from './src/types/index.ts';
 
 const app = express();
@@ -38,7 +41,7 @@ app.post('/api/capture', async (req: Request, res: Response) => {
   }
 
   const now = new Date();
-  const entryId = 'e_' + Math.random().toString(36).substring(2, 11);
+  const entryId = crypto.randomUUID();
 
   // Step 1: Immediately persist raw input unchanged
   const newEntry: Entry = {
@@ -66,9 +69,9 @@ app.post('/api/capture', async (req: Request, res: Response) => {
       userTimezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
 
-    // Create polymorphic extracted objects
+    // Create polymorphic extracted objects with valid UUIDs
     const objectsToSave: ExtractedObject[] = parsed.objects.map((obj) => {
-      const objId = 'obj_' + Math.random().toString(36).substring(2, 11);
+      const objId = crypto.randomUUID();
       return {
         id: objId,
         entry_id: entryId,
@@ -107,7 +110,7 @@ app.post('/api/capture', async (req: Request, res: Response) => {
         const entryEmbedding = await generateEmbedding(rawText.trim());
         if (entryEmbedding.length) {
           Database.saveEmbedding({
-            id: 'emb_' + Math.random().toString(36).substring(2, 11),
+            id: crypto.randomUUID(),
             user_id: userId,
             source_type: 'entry',
             source_id: entryId,
@@ -123,7 +126,7 @@ app.post('/api/capture', async (req: Request, res: Response) => {
           const objEmbedding = await generateEmbedding(objContent);
           if (objEmbedding.length) {
             Database.saveEmbedding({
-              id: 'emb_' + Math.random().toString(36).substring(2, 11),
+              id: crypto.randomUUID(),
               user_id: userId,
               source_type: 'object',
               source_id: obj.id,
@@ -204,7 +207,7 @@ app.post('/api/entries/:id/reprocess', async (req: Request, res: Response) => {
 
     const now = new Date();
     const newObjects: ExtractedObject[] = parsed.objects.map((obj) => {
-      const objId = 'obj_' + Math.random().toString(36).substring(2, 11);
+      const objId = crypto.randomUUID();
       return {
         id: objId,
         entry_id: id,
@@ -301,7 +304,6 @@ app.delete('/api/entries/:id', (req: Request, res: Response) => {
 app.get('/api/today', (req: Request, res: Response) => {
   const userId = getUserId(req);
   const tasks = Database.getObjects(userId, { type: 'task' });
-  const allEntries = Database.getEntries(userId);
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -455,7 +457,34 @@ app.get('/api/export', (req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
-// 9. Seed Example Scenarios
+// 9. Supabase Status & Sync Endpoints
+// -------------------------------------------------------------
+app.get('/api/supabase/status', async (_req: Request, res: Response) => {
+  const status = await checkSupabaseConnection();
+  res.json(status);
+});
+
+app.post('/api/supabase/sync', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const result = await Database.pushAllToSupabase(userId);
+  res.json(result);
+});
+
+app.get('/api/supabase/migration-sql', (_req: Request, res: Response) => {
+  try {
+    const sqlPath = path.resolve(process.cwd(), 'supabase/migrations/20260923000000_initial_schema.sql');
+    if (fs.existsSync(sqlPath)) {
+      const sql = fs.readFileSync(sqlPath, 'utf-8');
+      return res.type('text/plain').send(sql);
+    }
+    return res.status(404).send('-- Migration file not found');
+  } catch (err: any) {
+    res.status(500).send(`-- Error reading migration: ${err?.message}`);
+  }
+});
+
+// -------------------------------------------------------------
+// 10. Seed Example Scenarios
 // -------------------------------------------------------------
 app.post('/api/seed-examples', async (req: Request, res: Response) => {
   const userId = getUserId(req);
@@ -471,7 +500,7 @@ app.post('/api/seed-examples', async (req: Request, res: Response) => {
   const results: any[] = [];
   for (const phrase of seedPhrases) {
     const now = new Date();
-    const entryId = 'e_' + Math.random().toString(36).substring(2, 11);
+    const entryId = crypto.randomUUID();
     Database.createEntry({
       id: entryId,
       user_id: userId,
@@ -490,7 +519,7 @@ app.post('/api/seed-examples', async (req: Request, res: Response) => {
     try {
       const parsed = await parseThought({ rawText: phrase });
       const objs: ExtractedObject[] = parsed.objects.map(o => ({
-        id: 'obj_' + Math.random().toString(36).substring(2, 11),
+        id: crypto.randomUUID(),
         entry_id: entryId,
         user_id: userId,
         type: o.type,
