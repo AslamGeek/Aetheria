@@ -1,0 +1,170 @@
+{
+  "entries": [
+    {
+      "id": "11111111-1111-1111-1111-111111111101",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "raw_text": "Need to call Ramesh tomorrow about the land documents. Also maybe we should validate whether anyone wants reporting before building the dashboard. Check competitor pricing sometime this week.",
+      "cleaned_text": "Need to call Ramesh tomorrow about the land documents. Also maybe validate whether anyone wants reporting before building the dashboard. Check competitor pricing sometime this week.",
+      "source": "manual",
+      "status": "complete",
+      "parser_version": "v1.0.0",
+      "schema_version": 1,
+      "model_name": "gemini-3.8-flash",
+      "processing_error": null,
+      "created_at": "2026-09-22T16:22:37.215Z",
+      "processed_at": "2026-09-22T16:22:37.215Z"
+    },
+    {
+      "id": "11111111-1111-1111-1111-111111111102",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "raw_text": "We decided to delay the launch until February.",
+      "cleaned_text": "We decided to delay the launch until February.",
+      "source": "manual",
+      "status": "complete",
+      "parser_version": "v1.0.0",
+      "schema_version": 1,
+      "model_name": "gemini-3.8-flash",
+      "processing_error": null,
+      "created_at": "2026-09-22T16:22:37.215Z",
+      "processed_at": "2026-09-22T16:22:37.215Z"
+    }
+  ],
+  "objects": [
+    {
+      "id": "33333333-3333-3333-3333-333333333301",
+      "entry_id": "11111111-1111-1111-1111-111111111101",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "task",
+      "title": "Call Ramesh about the land documents",
+      "description": "Follow up regarding land documentation.",
+      "status": "pending",
+      "confidence": 0.95,
+      "due_at": "2026-09-23T16:22:37.215Z",
+      "date_precision": "relative_date",
+      "original_date_phrase": "tomorrow",
+      "metadata": {},
+      "created_at": "2026-09-22T16:22:37.215Z",
+      "updated_at": "2026-09-22T16:22:37.215Z"
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333302",
+      "entry_id": "11111111-1111-1111-1111-111111111101",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "idea",
+      "title": "Validate demand for reporting before building the dashboard",
+      "description": "Check whether customers actually need reporting before dedicating engineering effort.",
+      "status": "active",
+      "confidence": 0.88,
+      "due_at": null,
+      "date_precision": "none",
+      "original_date_phrase": null,
+      "metadata": {
+        "is_tentative": true
+      },
+      "created_at": "2026-09-22T16:22:37.215Z",
+      "updated_at": "2026-09-22T16:22:37.215Z"
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333303",
+      "entry_id": "11111111-1111-1111-1111-111111111101",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "task",
+      "title": "Check competitor pricing",
+      "description": "Review current competitive rates in the market.",
+      "status": "pending",
+      "confidence": 0.9,
+      "due_at": "2026-09-24T16:22:37.215Z",
+      "date_precision": "fuzzy",
+      "original_date_phrase": "sometime this week",
+      "metadata": {},
+      "created_at": "2026-09-22T16:22:37.215Z",
+      "updated_at": "2026-09-22T16:22:37.215Z"
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333304",
+      "entry_id": "11111111-1111-1111-1111-111111111102",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "decision",
+      "title": "Delay product launch until February",
+      "description": "Official timing shift resolved for launch.",
+      "status": "active",
+      "confidence": 0.98,
+      "due_at": "2027-02-01T00:00:00.000Z",
+      "date_precision": "date_range",
+      "original_date_phrase": "February",
+      "metadata": {},
+      "created_at": "2026-09-22T16:22:37.215Z",
+      "updated_at": "2026-09-22T16:22:37.215Z"
+    }
+  ],
+  "entities": [
+    {
+      "id": "22222222-2222-2222-2222-222222222201",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "person",
+      "canonical_name": "Ramesh",
+      "metadata": {},
+      "created_at": "2026-09-22T16:22:37.215Z"
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222202",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "project",
+      "canonical_name": "Dashboard Reporting",
+      "metadata": {},
+      "created_at": "2026-09-22T16:22:37.215Z"
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222203",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "topic",
+      "canonical_name": "Competitor Pricing",
+      "metadata": {},
+      "created_at": "2026-09-22T16:22:37.215Z"
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222204",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "type": "project",
+      "canonical_name": "Launch",
+      "metadata": {},
+      "created_at": "2026-09-22T16:22:37.215Z"
+    }
+  ],
+  "object_entities": [
+    {
+      "object_id": "33333333-3333-3333-3333-333333333301",
+      "entity_id": "22222222-2222-2222-2222-222222222201",
+      "relationship": "contact"
+    },
+    {
+      "object_id": "33333333-3333-3333-3333-333333333302",
+      "entity_id": "22222222-2222-2222-2222-222222222202",
+      "relationship": "focus"
+    },
+    {
+      "object_id": "33333333-3333-3333-3333-333333333303",
+      "entity_id": "22222222-2222-2222-2222-222222222203",
+      "relationship": "subject"
+    },
+    {
+      "object_id": "33333333-3333-3333-3333-333333333304",
+      "entity_id": "22222222-2222-2222-2222-222222222204",
+      "relationship": "milestone"
+    }
+  ],
+  "embeddings": [],
+  "insights": [
+    {
+      "id": "ins1",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "title": "Prudent feature prioritization",
+      "observation": "You consistently favor user demand validation before committing dev bandwidth to large surfaces like the dashboard.",
+      "evidence_entry_ids": [
+        "e101"
+      ],
+      "category": "pattern",
+      "created_at": "2026-09-22T16:22:37.215Z"
+    }
+  ]
+}

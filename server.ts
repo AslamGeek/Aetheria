@@ -11,7 +11,7 @@ import { parseThought } from './lib/ai/parseThought.ts';
 import { generateEmbedding } from './lib/ai/generateEmbedding.ts';
 import { answerFromMemory } from './lib/ai/answerFromMemory.ts';
 import { generateInsights } from './lib/ai/generateInsights.ts';
-import { checkSupabaseConnection } from './src/server/supabase.ts';
+import { checkSupabaseConnection, saveSupabaseCredentials } from './src/server/supabase.ts';
 import { Entry, ExtractedObject } from './src/types/index.ts';
 
 const app = express();
@@ -462,6 +462,16 @@ app.get('/api/export', (req: Request, res: Response) => {
 app.get('/api/supabase/status', async (_req: Request, res: Response) => {
   const status = await checkSupabaseConnection();
   res.json(status);
+});
+
+app.post('/api/supabase/config', async (req: Request, res: Response) => {
+  const { url, key } = req.body;
+  if (!url || !key) {
+    return res.status(400).json({ error: 'Both url and key are required' });
+  }
+  saveSupabaseCredentials(url, key);
+  const status = await checkSupabaseConnection();
+  res.json({ success: true, status });
 });
 
 app.post('/api/supabase/sync', async (req: Request, res: Response) => {

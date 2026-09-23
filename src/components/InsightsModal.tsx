@@ -14,7 +14,9 @@ import {
   ExternalLink,
   ShieldCheck,
   AlertCircle,
-  Server
+  Server,
+  KeyRound,
+  CheckCircle2
 } from 'lucide-react';
 import { Insight } from '../types/index.ts';
 
@@ -50,6 +52,13 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   const [syncingSupabase, setSyncingSupabase] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+
+  // Direct manual config form
+  const [showConfigForm, setShowConfigForm] = useState(false);
+  const [manualUrl, setManualUrl] = useState('');
+  const [manualKey, setManualKey] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configSaveMsg, setConfigSaveMsg] = useState<string | null>(null);
 
   const fetchInsights = async () => {
     try {
@@ -87,6 +96,12 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
       checkSupabase();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'database') {
+      checkSupabase();
+    }
+  }, [isOpen, activeTab]);
 
   const handleGenerate = async () => {
     try {
@@ -146,6 +161,32 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
     } finally {
       setSyncingSupabase(false);
       setTimeout(() => setSyncResult(null), 5000);
+    }
+  };
+
+  const handleSaveManualConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualUrl.trim() || !manualKey.trim()) return;
+    setSavingConfig(true);
+    setConfigSaveMsg(null);
+    try {
+      const res = await fetch('/api/supabase/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: manualUrl.trim(), key: manualKey.trim() }),
+      });
+      const data = await res.json();
+      if (data.success && data.status?.connected) {
+        setSupabaseStatus(data.status);
+        setConfigSaveMsg('Credentials saved and connected!');
+        setShowConfigForm(false);
+      } else {
+        setConfigSaveMsg(data.status?.error || 'Failed to connect with provided keys.');
+      }
+    } catch (err: any) {
+      setConfigSaveMsg(err?.message || 'Error saving credentials.');
+    } finally {
+      setSavingConfig(false);
     }
   };
 
@@ -348,43 +389,49 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                   <button
                     onClick={checkSupabase}
                     disabled={checkingSupabase}
-                    className="flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-indigo-300 transition-colors cursor-pointer"
                   >
-                    <RotateCw className={`w-3 h-3 ${checkingSupabase ? 'animate-spin' : ''}`} />
-                    <span>Check again</span>
+                    <RotateCw className={`w-3.5 h-3.5 ${checkingSupabase ? 'animate-spin' : ''}`} />
+                    <span>{checkingSupabase ? 'Checking...' : 'Refresh Status'}</span>
                   </button>
                 </div>
 
                 {supabaseStatus?.connected ? (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-950/30 border border-emerald-500/30">
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40">
                     <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-                    <div className="text-xs space-y-1">
-                      <p className="font-semibold text-emerald-200">
-                        Connected to Supabase PostgreSQL
-                      </p>
+                    <div className="text-xs space-y-1.5 flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-emerald-200 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          Connected to Supabase PostgreSQL
+                        </p>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-900/60 text-emerald-300 border border-emerald-500/30">
+                          LIVE
+                        </span>
+                      </div>
                       <p className="text-slate-400 font-mono text-[11px]">
-                        URL: {supabaseStatus.url}
+                        URL: <span className="text-slate-200">{supabaseStatus.url}</span>
                       </p>
                       {supabaseStatus.tablesReady ? (
-                        <p className="text-emerald-400 font-medium">
-                          All tables verified: entries, objects, entities, embeddings, insights.
+                        <p className="text-emerald-300 font-medium">
+                          All tables verified: entries, objects, entities, embeddings (pgvector), insights.
                         </p>
                       ) : (
-                        <p className="text-amber-400">
+                        <p className="text-amber-300">
                           Connected, but database tables need to be created. Please run the SQL migration below.
                         </p>
                       )}
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-900 border border-slate-800">
-                    <AlertCircle className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                    <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                     <div className="text-xs space-y-1">
                       <p className="font-semibold text-slate-200">
-                        {supabaseStatus?.configured ? 'Connection Failed' : 'Not Connected (Using Local Persistence)'}
+                        {supabaseStatus?.configured ? 'Connection Issue' : 'Not Connected (Using Local Persistence)'}
                       </p>
                       <p className="text-slate-400">
-                        {supabaseStatus?.error || 'Aetheria is currently storing your thoughts locally in data/aetheria_db.json with embedded vector search. Follow the steps below to connect your remote Supabase PostgreSQL database.'}
+                        {supabaseStatus?.error || 'Aetheria is currently storing thoughts locally in data/aetheria_db.json. Click "Refresh Status" or configure your credentials below.'}
                       </p>
                     </div>
                   </div>
@@ -396,22 +443,81 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                     <button
                       onClick={handleSyncToSupabase}
                       disabled={syncingSupabase}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5"
                     >
                       <RotateCw className={`w-3.5 h-3.5 ${syncingSupabase ? 'animate-spin' : ''}`} />
                       <span>{syncingSupabase ? 'Pushing Data...' : 'Push Local Data to Supabase'}</span>
                     </button>
                     {syncResult && (
-                      <span className="text-xs text-indigo-300 font-medium">{syncResult}</span>
+                      <span className="text-xs text-emerald-300 font-medium">{syncResult}</span>
                     )}
                   </div>
+                )}
+              </div>
+
+              {/* Direct In-App Credentials Form Toggle */}
+              <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                    <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Quick Configuration</span>
+                  </div>
+                  <button
+                    onClick={() => setShowConfigForm(!showConfigForm)}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+                  >
+                    {showConfigForm ? 'Hide form' : 'Enter / Update Keys in UI'}
+                  </button>
+                </div>
+
+                {showConfigForm && (
+                  <form onSubmit={handleSaveManualConfig} className="space-y-2.5 pt-1">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        Supabase Project URL:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="https://xyz.supabase.co"
+                        value={manualUrl}
+                        onChange={(e) => setManualUrl(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        Supabase Service Role Key (or Anon Key):
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="eyJhbGciOi..."
+                        value={manualKey}
+                        onChange={(e) => setManualKey(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="submit"
+                        disabled={savingConfig}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium cursor-pointer"
+                      >
+                        {savingConfig ? 'Saving & Testing...' : 'Save & Test Connection'}
+                      </button>
+                      {configSaveMsg && (
+                        <span className="text-xs text-indigo-300 font-medium">{configSaveMsg}</span>
+                      )}
+                    </div>
+                  </form>
                 )}
               </div>
 
               {/* Step-by-Step Setup Guide */}
               <div className="space-y-3">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                  How to Connect Supabase (3 Simple Steps)
+                  Supabase Setup Reference
                 </h4>
 
                 <div className="space-y-2.5 text-xs text-slate-300">
@@ -463,18 +569,15 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                   {/* Step 3 */}
                   <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/80 space-y-2">
                     <div className="font-semibold text-slate-200">
-                      <span>3. Set Environment Variables in AI Studio Secrets</span>
+                      <span>3. Environment Variables in AI Studio Secrets</span>
                     </div>
                     <p className="text-slate-400">
-                      In the AI Studio Secrets / Environment panel, set the following two variables (found in Supabase &gt; Project Settings &gt; API):
+                      Found in Supabase ➔ Project Settings ➔ API:
                     </p>
                     <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
-                      <div><strong className="text-indigo-300">SUPABASE_URL</strong> = https://xyzcompany.supabase.co</div>
+                      <div><strong className="text-indigo-300">SUPABASE_URL</strong> = https://xyz.supabase.co</div>
                       <div><strong className="text-indigo-300">SUPABASE_SERVICE_ROLE_KEY</strong> = eyJhbGci...</div>
                     </div>
-                    <p className="text-slate-400 text-[11px]">
-                      Once saved, Aetheria will automatically connect to your Supabase PostgreSQL database!
-                    </p>
                   </div>
                 </div>
               </div>
