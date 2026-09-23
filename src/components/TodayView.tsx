@@ -48,7 +48,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
     try {
       setLoading(true);
       const res = await fetch('/api/today');
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const json = await res.json();
         setData(json);
       }

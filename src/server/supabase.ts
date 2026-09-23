@@ -3,23 +3,42 @@ import fs from 'fs';
 import path from 'path';
 
 let supabaseClient: SupabaseClient | null = null;
-const CONFIG_FILE = path.resolve(process.cwd(), 'data', 'supabase_config.json');
+let inMemoryConfig: { url: string; key: string } | null = null;
+
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const CONFIG_FILE = isServerless
+  ? path.resolve('/tmp', 'supabase_config.json')
+  : path.resolve(process.cwd(), 'data', 'supabase_config.json');
 
 export function getSupabaseCredentials(): { url: string | null; key: string | null } {
   // Check process.env first
   let url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null;
-  let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || null;
+  let key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_KEY ||
+    process.env.SUPABASE_KEY ||
+    null;
+
+  // Check in-memory config next
+  if (inMemoryConfig?.url && inMemoryConfig?.key) {
+    url = url || inMemoryConfig.url;
+    key = key || inMemoryConfig.key;
+  }
 
   // Fallback to local config file if saved via UI
-  if ((!url || !key) && fs.existsSync(CONFIG_FILE)) {
+  if ((!url || !key)) {
     try {
-      const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-      if (data.url && data.key) {
-        url = data.url;
-        key = data.key;
+      if (fs.existsSync(CONFIG_FILE)) {
+        const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+        if (data.url && data.key) {
+          url = data.url;
+          key = data.key;
+        }
       }
     } catch (e) {
-      console.error('Error reading supabase_config.json:', e);
+      console.warn('Notice reading supabase_config.json:', e);
     }
   }
 
@@ -34,11 +53,16 @@ export function resetSupabaseClient(): void {
 }
 
 export function saveSupabaseCredentials(url: string, key: string): void {
-  const dir = path.dirname(CONFIG_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  inMemoryConfig = { url: url.trim(), key: key.trim() };
+  try {
+    const dir = path.dirname(CONFIG_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify({ url: url.trim(), key: key.trim() }, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('Could not write supabase config to disk, using in-memory credentials:', e);
   }
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify({ url: url.trim(), key: key.trim() }, null, 2), 'utf-8');
   resetSupabaseClient();
 }
 

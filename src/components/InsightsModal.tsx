@@ -18,7 +18,9 @@ import {
   KeyRound,
   CheckCircle2,
   Clock,
-  LogOut
+  LogOut,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Insight, Entry } from '../types/index.ts';
 import { 
@@ -79,6 +81,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
   const [manualKey, setManualKey] = useState(() => {
     return getBrowserSupabaseCredentials()?.key || '';
   });
+  const [showKey, setShowKey] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [configSaveMsg, setConfigSaveMsg] = useState<{ text: string; success: boolean } | null>(null);
 
@@ -88,7 +91,8 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
       const res = await fetch(`/api/insights?_t=${Date.now()}`, {
         cache: 'no-store',
       });
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         setInsights(data.insights || []);
       }
@@ -182,7 +186,8 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
     try {
       setGenerating(true);
       const res = await fetch('/api/insights/generate', { method: 'POST' });
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         setInsights(data.insights || []);
       }
@@ -254,13 +259,17 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
     const url = manualUrl.trim();
     const key = manualKey.trim();
 
-    if (!url || !key) return;
+    if (!url || !key) {
+      setConfigSaveMsg({ text: 'Please enter both your Supabase Project URL and Key.', success: false });
+      return;
+    }
 
     setSavingConfig(true);
     setConfigSaveMsg(null);
 
     try {
       // 1. Direct browser verification using @supabase/supabase-js
+      // This runs completely client-side in the browser, completely immune to server errors
       const result = await testBrowserSupabase(url, key);
 
       if (result.connected) {
@@ -273,24 +282,33 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
           onSupabaseStatusChange(true);
         }
 
-        // 2. Progressive background notification to backend (silently ignore if static/404)
-        fetch('/api/supabase/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, key }),
-        }).catch(() => {});
+        // 2. Background sync to backend (safe JSON handling, ignore any serverless/HTML failures)
+        try {
+          const res = await fetch('/api/supabase/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, key, serviceKey: key, anonKey: key }),
+          });
+          const contentType = res.headers.get('content-type') || '';
+          if (res.ok && contentType.includes('application/json')) {
+            await res.json().catch(() => {});
+          }
+        } catch {
+          // Ignore backend failure; client-side browser Supabase is already configured & active
+        }
 
         setTimeout(() => {
           setShowConfigForm(false);
           setConfigSaveMsg(null);
-        }, 2000);
+        }, 2200);
       } else {
         setConfigSaveMsg({ 
-          text: result.error || 'Could not connect. Please verify your Project URL and API Key.', 
+          text: result.error || 'Could not connect. Please verify your Project URL and Key.', 
           success: false 
         });
       }
     } catch (err: any) {
+      console.error('Error during Supabase connection:', err);
       setConfigSaveMsg({ text: err?.message || 'Error testing Supabase connection.', success: false });
     } finally {
       setSavingConfig(false);
@@ -313,7 +331,8 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
     setSeeding(true);
     try {
       const res = await fetch('/api/seed-examples', { method: 'POST' });
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         setSeedSuccess(true);
         onRefreshEntries();
         setTimeout(() => setSeedSuccess(false), 3000);
@@ -608,30 +627,48 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
                 {(!supabaseStatus?.connected || showConfigForm) && (
                   <form onSubmit={handleSaveManualConfig} className="space-y-3 pt-1">
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
+                      <label htmlFor="manualUrl" className="block text-[11px] text-slate-400 mb-1 font-medium">
                         Supabase Project URL:
                       </label>
                       <input
+                        id="manualUrl"
+                        name="manualUrl"
                         type="url"
                         placeholder="https://tprpkannsiyslsdegymv.supabase.co"
                         value={manualUrl}
                         onChange={(e) => setManualUrl(e.target.value)}
                         className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
                         required
+                        autoComplete="url"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
-                        Supabase Anon Key or Service Role Key:
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="eyJhbGciOi..."
-                        value={manualKey}
-                        onChange={(e) => setManualKey(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
-                        required
-                      />
+                      <div className="flex items-center justify-between mb-1">
+                        <label htmlFor="serviceKey" className="block text-[11px] text-slate-400 font-medium">
+                          Supabase Service Role Key (or Anon Key):
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowKey(!showKey)}
+                          className="text-[10px] text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+                        >
+                          {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3 text-indigo-400" />}
+                          <span>{showKey ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          id="serviceKey"
+                          name="serviceKey"
+                          type={showKey ? 'text' : 'password'}
+                          placeholder="eyJhbGciOi..."
+                          value={manualKey}
+                          onChange={(e) => setManualKey(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                          required
+                          autoComplete="off"
+                        />
+                      </div>
                       <p className="text-[10px] text-slate-500 mt-1">
                         Found in your Supabase Dashboard ➔ Project Settings ➔ API ➔ "anon" or "service_role" key.
                       </p>

@@ -5,7 +5,6 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { createServer as createViteServer } from 'vite';
 import { Database } from './src/server/db.ts';
 import { parseThought } from './lib/ai/parseThought.ts';
 import { generateEmbedding } from './lib/ai/generateEmbedding.ts';
@@ -474,13 +473,19 @@ app.get('/api/supabase/status', async (_req: Request, res: Response) => {
 });
 
 app.post('/api/supabase/config', async (req: Request, res: Response) => {
-  const { url, key } = req.body;
-  if (!url || !key) {
-    return res.status(400).json({ error: 'Both url and key are required' });
+  try {
+    const { url, key, serviceKey, anonKey } = req.body;
+    const resolvedKey = key || serviceKey || anonKey;
+    if (!url || !resolvedKey) {
+      return res.status(400).json({ error: 'Both url and key (serviceKey or anonKey) are required' });
+    }
+    saveSupabaseCredentials(url, resolvedKey);
+    const status = await checkSupabaseConnection();
+    return res.json({ success: true, status });
+  } catch (err: any) {
+    console.error('Error saving Supabase config:', err);
+    return res.status(500).json({ error: err?.message || 'Internal server error configuring Supabase' });
   }
-  saveSupabaseCredentials(url, key);
-  const status = await checkSupabaseConnection();
-  res.json({ success: true, status });
 });
 
 app.post('/api/supabase/sync', async (req: Request, res: Response) => {
@@ -590,6 +595,7 @@ async function startServer() {
       res.sendFile(path.resolve(process.cwd(), 'dist', 'index.html'));
     });
   } else {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

@@ -2,6 +2,14 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/api/supabase/config",
+      "destination": "/api/supabase/config"
+    },
+    {
+      "source": "/api/supabase/status",
+      "destination": "/api/supabase/status"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api"
     }

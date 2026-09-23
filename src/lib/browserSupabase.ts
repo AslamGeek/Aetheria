@@ -94,8 +94,8 @@ export async function testBrowserSupabase(
   url?: string;
   error?: string;
 }> {
-  const url = urlInput || getBrowserSupabaseCredentials()?.url;
-  const key = keyInput || getBrowserSupabaseCredentials()?.key;
+  let url = (urlInput || getBrowserSupabaseCredentials()?.url || '').trim().replace(/\/+$/, '');
+  let key = (keyInput || getBrowserSupabaseCredentials()?.key || '').trim().replace(/^['"]+|['"]+$/g, '');
 
   if (!url || !key) {
     return {
@@ -104,6 +104,11 @@ export async function testBrowserSupabase(
       tablesReady: false,
       error: 'Supabase URL and Key are required.',
     };
+  }
+
+  // Ensure https:// protocol
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`;
   }
 
   let maskedUrl = url;
@@ -127,6 +132,25 @@ export async function testBrowserSupabase(
         error.code === '42P01' ||
         error.message?.includes('relation "entries" does not exist') ||
         error.message?.includes('does not exist');
+
+      const isAuthError =
+        error.code === 'PGRST301' ||
+        error.message?.toLowerCase().includes('jwt') ||
+        error.message?.toLowerCase().includes('apikey') ||
+        error.message?.toLowerCase().includes('unauthorized');
+
+      if (isAuthError) {
+        return {
+          configured: true,
+          connected: false,
+          tablesReady: false,
+          url: maskedUrl,
+          error: `Authentication failed: ${error.message}. Please double check that you copied your anon or service_role key correctly.`,
+        };
+      }
+
+      // If connected to Supabase PostgreSQL but table not created yet:
+      saveBrowserSupabaseCredentials(url, key);
 
       return {
         configured: true,

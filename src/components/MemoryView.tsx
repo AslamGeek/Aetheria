@@ -52,13 +52,20 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ onInspectEntry }) => {
         body: JSON.stringify({ question: textToSearch }),
       });
 
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data: MemoryQueryResult = await res.json();
         setResult(data);
         setHistory(prev => [{ query: textToSearch, result: data }, ...prev.slice(0, 4)]);
       } else {
-        const err = await res.json();
-        alert(err.error || 'Failed to search memory');
+        let errMsg = 'Failed to search memory';
+        if (contentType.includes('application/json')) {
+          try {
+            const err = await res.json();
+            errMsg = err.error || errMsg;
+          } catch {}
+        }
+        console.warn('Memory search response:', errMsg);
       }
     } catch (err) {
       console.error('Memory search error:', err);
