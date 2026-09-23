@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#090d16"/>
+  <circle cx="256" cy="256" r="180" fill="url(#bg_grad)" opacity="0.12" />
+  <defs>
+    <radialGradient id="bg_grad" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#090d16" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="primary_grad" x1="120" y1="120" x2="392" y2="392" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818cf8"/>
+      <stop offset="0.5" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="accent_grad" x1="180" y1="180" x2="332" y2="332" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <path d="M256 120 C180 120, 120 180, 120 256 C120 332, 180 392, 256 392 C332 392, 392 332, 392 256 C392 180, 332 120, 256 120 Z" stroke="url(#primary_grad)" stroke-width="20" stroke-linecap="round" stroke-dasharray="16 20" opacity="0.4"/>
+  <path d="M190 256 L236 302 L322 210" stroke="url(#accent_grad)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="350" cy="162" r="14" fill="#38bdf8"/>
+  <circle cx="162" cy="350" r="10" fill="#818cf8"/>
+  <circle cx="360" cy="340" r="8" fill="#6366f1"/>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "Aetheria - Personal AI Memory & Action Engine",
+  "description": "Capture unstructured thoughts instantly into structured actions, notes, ideas, decisions, and retrievable memory powered by Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
